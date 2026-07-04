@@ -1,5 +1,5 @@
 /* Goal Autopilot OS — Service Worker (オフライン対応 / アプリシェルキャッシュ) */
-const CACHE = 'gaos-v1';
+const CACHE = 'gaos-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -24,6 +24,8 @@ self.addEventListener('activate', e => {
 /* キャッシュ優先 + バックグラウンド更新 */
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
+  /* GitHub API など外部への通信はキャッシュしない(同期データの鮮度を守る) */
+  if (new URL(e.request.url).origin !== self.location.origin) return;
   e.respondWith(
     caches.match(e.request).then(cached => {
       const fresh = fetch(e.request).then(res => {

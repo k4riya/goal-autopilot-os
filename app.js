@@ -22,6 +22,7 @@ const uid = pre => pre + '_' + Date.now() + '_' + Math.random().toString(36).sli
 /* ---------- 状態 ---------- */
 const DEFAULT_STATE = {
   theme: 'dark',
+  updatedAt: 0,        // データの最終更新時刻 (同期の新旧判定に使用)
   projects: [],        // {id,name,category,catLabel,icon,kpiCat,purpose,deadline,situation,plan,memo,nextMove,createdAt}
   activeId: null,
   daily: {},           // { 'YYYY-MM-DD': { [pid]: { tasks:[{text,done}], deferred:[] } } }
@@ -39,7 +40,11 @@ function loadState() {
     S = raw ? Object.assign({}, DEFAULT_STATE, JSON.parse(raw)) : { ...DEFAULT_STATE };
   } catch { S = { ...DEFAULT_STATE }; }
 }
-function save() { localStorage.setItem('gaos_v1', JSON.stringify(S)); }
+function save(bump = true) {
+  if (bump) S.updatedAt = Date.now();
+  localStorage.setItem('gaos_v1', JSON.stringify(S));
+  if (bump && typeof SYNC !== 'undefined') SYNC.schedulePush();
+}
 
 function activeProject() {
   return S.projects.find(p => p.id === S.activeId) || S.projects[0] || null;
@@ -122,6 +127,8 @@ function renderHome() {
       <a class="card" href="#pdca"><div class="f-icon">🔄</div><div class="f-title">週次PDCA</div><div class="f-desc">週1回の振り返りで計画を自動更新</div></a>
       <a class="card" href="#risk"><div class="f-icon">🚧</div><div class="f-title">危険行動チェック</div><div class="f-desc">遠回りになる行動を冷静に止める</div></a>
       <a class="card" href="#kpi"><div class="f-icon">📊</div><div class="f-title">KPIダッシュボード</div><div class="f-desc">数字で進捗を確認</div></a>
+      <a class="card" href="#sync"><div class="f-icon">☁</div><div class="f-title">同期・バックアップ</div><div class="f-desc">スマホとPCでデータを共有</div></a>
+      <a class="card" href="#history"><div class="f-icon">🕘</div><div class="f-title">履歴</div><div class="f-desc">プラン・レビュー・完了タスク</div></a>
     </div>
     <p class="hint mt16" style="text-align:center">※ 本ツールは行動管理を支援するものであり、成果を保証するものではありません。データは端末内にのみ保存されます。</p>
   `;
@@ -479,6 +486,54 @@ function renderHistory() {
   `;
 }
 
+/* ---------- 11. 同期・バックアップ ---------- */
+function renderSync() {
+  const cfg = SYNC.cfg;
+  const last = cfg.lastSyncAt ? new Date(cfg.lastSyncAt).toLocaleString('ja-JP') : 'まだ同期していません';
+  const gistSetup = !cfg.token ? `
+      <p>GitHubの非公開Gistをデータ置き場にして、スマホとPCで同じデータを使えるようにします。初回だけトークンの設定が必要です(2分)。</p>
+      <ol>
+        <li><a href="https://github.com/settings/tokens/new?scopes=gist&description=Goal-Autopilot-OS-Sync" target="_blank" rel="noopener">このリンク</a>を開く(GitHubのトークン作成ページ。<b>gist</b>権限だけが選択済みになっています)</li>
+        <li>Expiration(有効期限)を選んで「Generate token」を押す ※期限が切れると再設定が必要になるので、長め推奨</li>
+        <li>表示された <code>ghp_...</code> で始まるトークンをコピーして、下に貼り付ける</li>
+      </ol>
+      <div class="field"><label>アクセストークン</label>
+        <input type="password" id="ghToken" placeholder="ghp_xxxxxxxxxxxx" autocomplete="off"></div>
+      <button class="btn btn-primary btn-block" onclick="App.connectSync()">保存して接続する</button>
+      <p class="hint">トークンはこの端末のブラウザ内にのみ保存されます(エクスポートにも含まれません)。共用のPCでは設定しないでください。</p>`
+    : `
+      <p><span class="badge good">✅ 接続済み</span></p>
+      <p class="hint">同期先: ${cfg.gistId ? `非公開Gist(<code>${esc(cfg.gistId.slice(0, 8))}…</code>)` : '未作成(初回同期で自動作成されます)'}<br>最終同期: ${esc(last)}</p>
+      <button class="btn btn-primary btn-block" onclick="App.syncNow()">☁ 今すぐ同期する</button>
+      <div class="task-item mt8" style="align-items:center">
+        <input type="checkbox" id="autoSync" ${cfg.auto !== false ? 'checked' : ''} onchange="App.toggleAutoSync(this.checked)">
+        <label for="autoSync" style="cursor:pointer">自動同期(起動時に取得・変更後に自動送信)</label>
+      </div>
+      <button class="btn btn-danger btn-sm mt8" onclick="App.disconnectSync()">接続を解除(トークンを削除)</button>`;
+  view().innerHTML = `
+    <h1 class="page-title">☁ 同期・バックアップ</h1>
+    <p class="page-desc">スマホとPCで同じデータを使うための設定です。</p>
+    <div class="card accent">
+      <h2>☁ 自動同期(GitHub Gist)</h2>
+      ${gistSetup}
+      <div id="syncStatus" class="mt8">${esc(SYNC.status)}</div>
+    </div>
+    <div class="card">
+      <h2>📤 エクスポート(手動バックアップ)</h2>
+      <p class="hint">全データをテキストとして書き出します。もう一方の端末の「インポート」に貼り付けても移行できます。</p>
+      <button class="btn btn-block" onclick="App.doExport()">データを書き出す</button>
+      <textarea id="exportBox" class="mt8" placeholder="ここに書き出されます" style="display:none"></textarea>
+      <button class="btn btn-sm mt8" id="copyBtn" style="display:none" onclick="App.copyExport()">📋 コピー</button>
+    </div>
+    <div class="card">
+      <h2>📥 インポート(復元)</h2>
+      <p class="hint">エクスポートしたテキストを貼り付けて読み込みます。<b>この端末の現在のデータは上書きされます。</b></p>
+      <textarea id="importBox" placeholder='{"theme":"dark","projects":[...]}'></textarea>
+      <button class="btn btn-block mt8" onclick="App.doImport()">読み込む(上書き)</button>
+    </div>
+  `;
+}
+
 /* ============================================================
    アクション (onclick から呼ばれる)
    ============================================================ */
@@ -592,6 +647,193 @@ const App = {
     S.theme = S.theme === 'dark' ? 'light' : 'dark';
     document.documentElement.dataset.theme = S.theme;
     save();
+  },
+
+  /* --- 同期・バックアップ --- */
+  connectSync() {
+    const el = document.getElementById('ghToken');
+    const token = (el.value || '').trim();
+    if (!token) { alert('トークンを貼り付けてください'); return; }
+    if (!/^(ghp_|gho_|github_pat_)/.test(token)) {
+      if (!confirm('トークンの形式が一般的なもの(ghp_... / github_pat_...)と異なります。このまま保存しますか?')) return;
+    }
+    SYNC.cfg.token = token;
+    SYNC.cfg.auto = true;
+    SYNC.saveCfg();
+    route();
+    SYNC.syncNow(true);
+  },
+
+  syncNow() { SYNC.syncNow(true); },
+
+  toggleAutoSync(on) { SYNC.cfg.auto = on; SYNC.saveCfg(); },
+
+  disconnectSync() {
+    if (!confirm('同期の接続を解除しますか?(この端末のデータとGist上のデータは残ります)')) return;
+    SYNC.cfg = {};
+    SYNC.saveCfg();
+    route();
+  },
+
+  doExport() {
+    const box = document.getElementById('exportBox');
+    box.value = JSON.stringify(S);
+    box.style.display = 'block';
+    document.getElementById('copyBtn').style.display = 'inline-block';
+    box.select();
+  },
+
+  copyExport() {
+    const box = document.getElementById('exportBox');
+    box.select();
+    if (navigator.clipboard) navigator.clipboard.writeText(box.value).then(() => alert('コピーしました'));
+    else { document.execCommand('copy'); alert('コピーしました'); }
+  },
+
+  doImport() {
+    const raw = (document.getElementById('importBox').value || '').trim();
+    if (!raw) { alert('エクスポートしたテキストを貼り付けてください'); return; }
+    let data;
+    try { data = JSON.parse(raw); } catch { alert('読み込めませんでした。テキストが途中で切れていないか確認してください。'); return; }
+    if (!data || !Array.isArray(data.projects)) { alert('このアプリのデータ形式ではないようです。'); return; }
+    if (!confirm(`読み込みますか?(プロジェクト${data.projects.length}件)\nこの端末の現在のデータは上書きされます。`)) return;
+    S = Object.assign({}, DEFAULT_STATE, data);
+    save();
+    document.documentElement.dataset.theme = S.theme;
+    alert('読み込みました');
+    location.hash = '#home';
+  }
+};
+
+/* ============================================================
+   GitHub Gist 同期モジュール
+   トークンは localStorage の別キー(gaos_sync)に保存し、
+   エクスポート(gaos_v1)には一切含めない。
+   ============================================================ */
+const SYNC = {
+  FILE: 'goal-autopilot-os-data.json',
+  cfg: (() => { try { return JSON.parse(localStorage.getItem('gaos_sync')) || {}; } catch { return {}; } })(),
+  status: '',
+  busy: false,
+  pushTimer: null,
+
+  saveCfg() { localStorage.setItem('gaos_sync', JSON.stringify(this.cfg)); },
+
+  setStatus(msg) {
+    this.status = msg;
+    const el = document.getElementById('syncStatus');
+    if (el) el.innerHTML = msg ? `<div class="badge ${msg.startsWith('⚠') ? 'warn' : 'good'}" style="white-space:normal">${esc(msg)}</div>` : '';
+  },
+
+  async api(path, opts = {}) {
+    const headers = {
+      'Authorization': 'Bearer ' + this.cfg.token,
+      'Accept': 'application/vnd.github+json'
+    };
+    if (opts.body) headers['Content-Type'] = 'application/json';
+    const res = await fetch('https://api.github.com' + path, { ...opts, headers });
+    if (!res.ok) {
+      const hint = res.status === 401 ? '(トークンが無効か期限切れです。再設定してください)'
+        : res.status === 403 ? '(権限不足です。gist権限のあるトークンか確認してください)' : '';
+      throw new Error(`GitHub API ${res.status} ${hint}`);
+    }
+    return res.json();
+  },
+
+  payload() {
+    return JSON.stringify({ updatedAt: S.updatedAt || 0, savedAt: new Date().toISOString(), state: S });
+  },
+
+  /* 既存の同期用Gistを探す(2台目の端末はトークンを入れるだけで見つかる) */
+  async findGist() {
+    const list = await this.api('/gists?per_page=100');
+    const hit = list.find(g => g.files && g.files[this.FILE]);
+    return hit ? hit.id : null;
+  },
+
+  async push(gistId) {
+    const files = { [this.FILE]: { content: this.payload() } };
+    if (gistId) return this.api('/gists/' + gistId, { method: 'PATCH', body: JSON.stringify({ files }) });
+    return this.api('/gists', { method: 'POST', body: JSON.stringify({ description: 'Goal Autopilot OS 同期データ', public: false, files }) });
+  },
+
+  async pull(gistId) {
+    const g = await this.api('/gists/' + gistId);
+    const f = g.files[this.FILE];
+    if (!f) throw new Error('同期ファイルが見つかりません');
+    let content = f.content;
+    if (f.truncated) content = await (await fetch(f.raw_url)).text();
+    return JSON.parse(content);
+  },
+
+  applyRemote(state, remoteUpdatedAt) {
+    const localTheme = S.theme; // テーマは端末ごとの好みを維持
+    S = Object.assign({}, DEFAULT_STATE, state);
+    S.theme = localTheme;
+    S.updatedAt = remoteUpdatedAt;
+    localStorage.setItem('gaos_v1', JSON.stringify(S));
+    document.documentElement.dataset.theme = S.theme;
+    route();
+  },
+
+  /* 変更後の自動送信 (10秒デバウンス) */
+  schedulePush() {
+    if (!this.cfg.token || this.cfg.auto === false) return;
+    clearTimeout(this.pushTimer);
+    this.pushTimer = setTimeout(() => this.syncNow(false), 10000);
+  },
+
+  async syncNow(interactive) {
+    if (!this.cfg.token) { if (interactive) alert('先に同期ページでトークンを設定してください'); return; }
+    if (this.busy) return;
+    this.busy = true;
+    this.setStatus('同期中…');
+    try {
+      /* 同期先Gistの特定(なければ検索→それでもなければ新規作成) */
+      if (!this.cfg.gistId) {
+        this.cfg.gistId = await this.findGist();
+        if (!this.cfg.gistId) {
+          const g = await this.push(null);
+          this.cfg.gistId = g.id;
+          this.cfg.lastSyncAt = S.updatedAt || 0;
+          this.saveCfg();
+          this.setStatus('✅ 同期先を新規作成し、この端末のデータを送信しました');
+          return;
+        }
+        this.saveCfg();
+      }
+      const remote = await this.pull(this.cfg.gistId);
+      const rT = remote.updatedAt || 0;
+      const lT = S.updatedAt || 0;
+      const base = this.cfg.lastSyncAt || 0;
+      if (rT > lT) {
+        let adopt = true;
+        if (lT > base && interactive) {
+          adopt = confirm('この端末と同期先の両方に変更があります。\n\nOK: 同期先(新しい方)のデータを取り込む\nキャンセル: この端末のデータで同期先を上書きする');
+        }
+        if (adopt) {
+          this.applyRemote(remote.state, rT);
+          this.cfg.lastSyncAt = rT;
+          this.setStatus('✅ 同期先の新しいデータを取り込みました');
+        } else {
+          await this.push(this.cfg.gistId);
+          this.cfg.lastSyncAt = S.updatedAt;
+          this.setStatus('✅ この端末のデータで上書きしました');
+        }
+      } else if (lT > rT) {
+        await this.push(this.cfg.gistId);
+        this.cfg.lastSyncAt = lT;
+        this.setStatus('✅ この端末のデータを送信しました');
+      } else {
+        this.cfg.lastSyncAt = lT;
+        this.setStatus('✅ すでに最新です');
+      }
+      this.saveCfg();
+    } catch (e) {
+      this.setStatus('⚠ 同期に失敗しました: ' + e.message);
+    } finally {
+      this.busy = false;
+    }
   }
 };
 
@@ -601,7 +843,8 @@ const App = {
 const ROUTES = {
   home: renderHome, input: renderInput, plan: renderPlan, today: renderToday,
   projects: renderProjects, pdca: renderPDCA, risk: renderRisk,
-  templates: renderTemplates, kpi: renderKPI, history: renderHistory
+  templates: renderTemplates, kpi: renderKPI, history: renderHistory,
+  sync: renderSync
 };
 
 function route() {
@@ -622,6 +865,9 @@ document.getElementById('themeBtnSide').addEventListener('click', App.toggleThem
 document.getElementById('themeBtnTop').addEventListener('click', App.toggleTheme);
 window.addEventListener('hashchange', route);
 route();
+
+/* 同期が設定済みなら、起動時に最新データを取得 */
+if (SYNC.cfg.token && SYNC.cfg.auto !== false) SYNC.syncNow(false);
 
 /* PWA: Service Worker 登録 (http/https のみ) */
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
