@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Goal Autopilot OS</title>
+<meta name="description" content="目標を入れるだけ。あとは、今日やることまで自動で。AIが行動計画・KPI・週次PDCAまで作成します。">
+<meta name="theme-color" content="#0f1420">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- PC: サイドバー -->
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-icon">◎</span>
+      <div>
+        <div class="brand-name">Goal Autopilot OS</div>
+        <div class="brand-sub">目標 → 今日やること 自動化</div>
+      </div>
+    </div>
+    <nav class="sidenav" id="sidenav">
+      <a href="#home" data-route="home">🏠 ホーム</a>
+      <a href="#today" data-route="today">✅ 今日やること</a>
+      <a href="#input" data-route="input">🎯 目標クイック入力</a>
+      <a href="#templates" data-route="templates">🗂 テンプレ選択</a>
+      <a href="#plan" data-route="plan">🤖 AIプラン</a>
+      <a href="#projects" data-route="projects">📁 プロジェクト</a>
+      <a href="#pdca" data-route="pdca">🔄 週次PDCA</a>
+      <a href="#risk" data-route="risk">🚧 危険行動チェック</a>
+      <a href="#kpi" data-route="kpi">📊 KPIダッシュボード</a>
+      <a href="#history" data-route="history">🕘 履歴</a>
+    </nav>
+    <button class="theme-btn" id="themeBtnSide">🌓 テーマ切替</button>
+  </aside>
+
+  <!-- スマホ: ヘッダー -->
+  <header class="mobile-header">
+    <span class="brand-icon">◎</span>
+    <span class="brand-name">Goal Autopilot OS</span>
+    <button class="theme-btn small" id="themeBtnTop" aria-label="テーマ切替">🌓</button>
+  </header>
+
+  <main id="view" class="view" aria-live="polite"></main>
+
+  <!-- スマホ: 下部ナビ -->
+  <nav class="bottomnav" id="bottomnav">
+    <a href="#home" data-route="home"><span>🏠</span>ホーム</a>
+    <a href="#today" data-route="today"><span>✅</span>今日</a>
+    <a href="#input" data-route="input"><span>🎯</span>目標</a>
+    <a href="#pdca" data-route="pdca"><span>🔄</span>PDCA</a>
+    <a href="#kpi" data-route="kpi"><span>📊</span>KPI</a>
+  </nav>
+
+</div>
+<script src="engine.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
