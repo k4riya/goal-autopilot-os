@@ -168,7 +168,7 @@ button:active, .btn:active { transform: scale(0.98); }
 .field label { display: block; font-size: 13px; font-weight: 700; margin-bottom: 5px; }
 .field label .req { color: var(--danger); font-size: 11px; margin-left: 4px; }
 .field label .opt { color: var(--muted); font-size: 11px; margin-left: 4px; font-weight: 400; }
-input[type="text"], input[type="date"], input[type="number"], textarea, select {
+input[type="text"], input[type="date"], input[type="number"], input[type="password"], textarea, select {
   width: 100%;
   font-family: inherit; font-size: 15px;
   background: var(--card2); color: var(--text);

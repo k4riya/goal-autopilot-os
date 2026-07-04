@@ -127,7 +127,7 @@ function renderHome() {
       <a class="card" href="#pdca"><div class="f-icon">🔄</div><div class="f-title">週次PDCA</div><div class="f-desc">週1回の振り返りで計画を自動更新</div></a>
       <a class="card" href="#risk"><div class="f-icon">🚧</div><div class="f-title">危険行動チェック</div><div class="f-desc">遠回りになる行動を冷静に止める</div></a>
       <a class="card" href="#kpi"><div class="f-icon">📊</div><div class="f-title">KPIダッシュボード</div><div class="f-desc">数字で進捗を確認</div></a>
-      <a class="card" href="#sync"><div class="f-icon">☁</div><div class="f-title">同期・バックアップ</div><div class="f-desc">スマホとPCでデータを共有</div></a>
+      <a class="card" href="#sync"><div class="f-icon">⚙</div><div class="f-title">設定(AI・同期)</div><div class="f-desc">AI詳細モード・データ共有</div></a>
       <a class="card" href="#history"><div class="f-icon">🕘</div><div class="f-title">履歴</div><div class="f-desc">プラン・レビュー・完了タスク</div></a>
     </div>
     <p class="hint mt16" style="text-align:center">※ 本ツールは行動管理を支援するものであり、成果を保証するものではありません。データは端末内にのみ保存されます。</p>
@@ -191,16 +191,21 @@ function renderPlan() {
   const saved = S.projects.some(p => p.plan && p.plan.id === plan.id);
   view().innerHTML = `
     <div class="row-between">
-      <h1 class="page-title">🤖 AIプラン <span class="badge">${plan.icon} ${esc(plan.catLabel)}</span></h1>
+      <h1 class="page-title">🤖 AIプラン <span class="badge">${plan.icon} ${esc(plan.catLabel)}</span>
+        ${plan.aiGenerated ? '<span class="badge good">✨ AI詳細モード</span>' : ''}</h1>
       ${saved
         ? '<span class="badge good">✔ プロジェクト保存済み</span>'
         : `<button class="btn btn-good" onclick="App.saveAsProject()">📁 プロジェクトとして保存</button>`}
     </div>
+    ${plan.aiError ? `<div class="card warn"><p>⚠ AI生成に失敗したため、内蔵エンジンのプランを表示しています(${esc(plan.aiError)})。<a href="#sync">設定を確認する</a></p></div>` : ''}
     ${warn}
     <div class="cards-grid">
       <div class="card accent span2"><h2>📝 目標の要約</h2><p style="white-space:pre-wrap">${esc(plan.summary)}</p></div>
       <div class="card accent"><h2>🥇 最優先目標</h2><p><b>${esc(plan.top)}</b></p></div>
       <div class="card good"><h2>👣 最初の一歩</h2><p><b>${esc(plan.first)}</b></p><p class="hint">まずこれだけやれば今日はOKです。</p></div>
+      ${plan.numbers && plan.numbers.length ? `<div class="card accent span2"><h2>🔢 あなたの数字で計算すると</h2>${ul(plan.numbers)}</div>` : ''}
+      ${plan.flow && plan.flow.length ? `<div class="card good span2"><h2>🧭 今後の進め方(この流れでいきましょう)</h2>${ol(plan.flow)}</div>` : ''}
+      ${plan.expert && plan.expert.length ? `<div class="card span2"><h2>🎓 専門家の視点・相場観</h2>${ul(plan.expert)}</div>` : ''}
       <div class="card"><h2>✅ 今日やること(3つまで)</h2>${ol(plan.today)}</div>
       <div class="card"><h2>📅 今週の目標(5つまで)</h2>${ol(plan.week)}</div>
       <div class="card"><h2>🗓 1ヶ月目標</h2><p>${esc(plan.month)}</p></div>
@@ -510,9 +515,41 @@ function renderSync() {
         <label for="autoSync" style="cursor:pointer">自動同期(起動時に取得・変更後に自動送信)</label>
       </div>
       <button class="btn btn-danger btn-sm mt8" onclick="App.disconnectSync()">接続を解除(トークンを削除)</button>`;
+  const ai = AI.cfg;
+  const aiCard = !ai.apiKey ? `
+      <p>設定すると、プラン生成と週次レビューが<b>生成AI(Claude)によるあなた専用の内容</b>になります。各分野の専門家が監修したような、入力内容に合わせた具体的なプランが出ます。</p>
+      <p class="hint">未設定でも内蔵エンジンで動作します。APIは従量課金で、プラン1回の生成は数円程度です。</p>
+      <ol>
+        <li><a href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a> でアカウント作成(クレジットの購入が必要。最低$5)</li>
+        <li>「API Keys」→「Create Key」でキーを作成し、<code>sk-ant-...</code> をコピー</li>
+        <li>下に貼り付けて保存</li>
+      </ol>
+      <div class="field"><label>Claude APIキー</label>
+        <input type="password" id="aiKey" placeholder="sk-ant-api03-..." autocomplete="off"></div>
+      <div class="field"><label>モデル</label>
+        <select id="aiModel">
+          <option value="claude-sonnet-5">Sonnet(推奨: 品質と価格のバランス)</option>
+          <option value="claude-haiku-4-5-20251001">Haiku(低コスト・高速)</option>
+          <option value="claude-opus-4-8">Opus(最高品質・高コスト)</option>
+        </select></div>
+      <button class="btn btn-primary btn-block" onclick="App.connectAI()">保存して有効にする</button>
+      <p class="hint">キーはこの端末のブラウザ内にのみ保存されます(エクスポート・同期にも含まれません)。</p>`
+    : `
+      <p><span class="badge good">✨ 有効</span> モデル:
+        <select id="aiModel" onchange="App.setAIModel(this.value)" style="width:auto;display:inline-block;min-height:36px;padding:4px 8px">
+          <option value="claude-sonnet-5" ${(ai.model || 'claude-sonnet-5') === 'claude-sonnet-5' ? 'selected' : ''}>Sonnet(推奨)</option>
+          <option value="claude-haiku-4-5-20251001" ${ai.model === 'claude-haiku-4-5-20251001' ? 'selected' : ''}>Haiku(低コスト)</option>
+          <option value="claude-opus-4-8" ${ai.model === 'claude-opus-4-8' ? 'selected' : ''}>Opus(最高品質)</option>
+        </select></p>
+      <p class="hint">プラン生成と週次レビューがAIによるオーダーメイドになっています。生成に10〜30秒かかります。</p>
+      <button class="btn btn-danger btn-sm" onclick="App.disconnectAI()">無効にする(キーを削除)</button>`;
   view().innerHTML = `
-    <h1 class="page-title">☁ 同期・バックアップ</h1>
-    <p class="page-desc">スマホとPCで同じデータを使うための設定です。</p>
+    <h1 class="page-title">⚙ 設定(AI・同期・バックアップ)</h1>
+    <p class="page-desc">AI詳細モードと、スマホ・PCでデータを共有するための設定です。</p>
+    <div class="card good">
+      <h2>✨ AI詳細モード(Claude API)</h2>
+      ${aiCard}
+    </div>
     <div class="card accent">
       <h2>☁ 自動同期(GitHub Gist)</h2>
       ${gistSetup}
@@ -540,17 +577,26 @@ function renderSync() {
 const App = {
   pickTemplate(k) { S.draftTemplate = k; save(); if (location.hash === '#input' || location.hash === '') route(); },
 
-  generate(ev) {
+  async generate(ev) {
     ev.preventDefault();
     const f = new FormData(ev.target);
     const input = {};
     for (const [k, v] of f.entries()) input[k] = v.trim();
     input.template = S.draftTemplate;
-    const plan = GA.generatePlan(input);
+    let plan = GA.generatePlan(input);
+    if (AI.enabled()) {
+      view().innerHTML = `<div class="empty">🤖 AIが専門家品質のプランを作成しています…<br><br><span class="hint">通常10〜30秒かかります。このままお待ちください。</span></div>`;
+      window.scrollTo(0, 0);
+      try {
+        plan = await AI.plan(input, plan);
+      } catch (e) {
+        plan.aiError = e.message;
+      }
+    }
     S.lastPlan = plan;
     S.plans.push(plan);
     save();
-    location.hash = '#plan';
+    if (location.hash === '#plan') route(); else location.hash = '#plan';
   },
 
   saveAsProject() {
@@ -610,18 +656,29 @@ const App = {
     location.hash = '#projects';
   },
 
-  runReview(ev) {
+  async runReview(ev) {
     ev.preventDefault();
     const p = activeProject(); if (!p) return;
     const f = new FormData(ev.target);
     const rev = {};
     for (const [k, v] of f.entries()) rev[k] = v.trim();
-    const out = GA.generateReview(rev, p);
+    const outEl = document.getElementById('reviewOut');
+    let out = GA.generateReview(rev, p);
+    if (AI.enabled()) {
+      outEl.innerHTML = '<div class="empty">🤖 AIがレビューを作成しています…<br><br><span class="hint">10〜20秒ほどお待ちください。</span></div>';
+      try {
+        out = await AI.review(rev, p, out);
+      } catch (e) {
+        out.aiError = e.message;
+      }
+    }
     S.reviews.push({ id: out.id, pid: p.id, date: dstr(), input: rev, output: out });
-    // 明日以降の「今日やること」の種を更新するため保存のみ(ensureTodayが参照)
+    // 明日以降の「今日やること」の種を更新するため保存(ensureTodayが参照)
     save();
-    document.getElementById('reviewOut').innerHTML = renderReviewResult(out);
-    document.getElementById('reviewOut').scrollIntoView({ behavior: 'smooth' });
+    outEl.innerHTML =
+      (out.aiError ? `<div class="card warn"><p>⚠ AI生成に失敗したため、内蔵エンジンのレビューを表示しています(${esc(out.aiError)})</p></div>` : '')
+      + renderReviewResult(out);
+    outEl.scrollIntoView({ behavior: 'smooth' });
   },
 
   scanRiskText() {
@@ -647,6 +704,29 @@ const App = {
     S.theme = S.theme === 'dark' ? 'light' : 'dark';
     document.documentElement.dataset.theme = S.theme;
     save();
+  },
+
+  /* --- AI詳細モード --- */
+  connectAI() {
+    const key = (document.getElementById('aiKey').value || '').trim();
+    if (!key) { alert('APIキーを貼り付けてください'); return; }
+    if (!key.startsWith('sk-ant-')) {
+      if (!confirm('キーの形式が一般的なもの(sk-ant-...)と異なります。このまま保存しますか?')) return;
+    }
+    AI.cfg.apiKey = key;
+    AI.cfg.model = document.getElementById('aiModel').value;
+    AI.saveCfg();
+    alert('AI詳細モードを有効にしました。次のプラン生成からAIが作成します。');
+    route();
+  },
+
+  setAIModel(m) { AI.cfg.model = m; AI.saveCfg(); },
+
+  disconnectAI() {
+    if (!confirm('AI詳細モードを無効にしますか?(キーを削除します。内蔵エンジンでの生成は引き続き使えます)')) return;
+    AI.cfg = {};
+    AI.saveCfg();
+    route();
   },
 
   /* --- 同期・バックアップ --- */
@@ -702,6 +782,173 @@ const App = {
     document.documentElement.dataset.theme = S.theme;
     alert('読み込みました');
     location.hash = '#home';
+  }
+};
+
+/* ============================================================
+   AI詳細モード (Claude API)
+   APIキーは localStorage の別キー(gaos_ai)に保存し、
+   エクスポート・Gist同期には一切含めない。
+   未設定時は内蔵ルールエンジンで動作する。
+   ============================================================ */
+const AI = {
+  cfg: (() => { try { return JSON.parse(localStorage.getItem('gaos_ai')) || {}; } catch { return {}; } })(),
+  saveCfg() { localStorage.setItem('gaos_ai', JSON.stringify(this.cfg)); },
+  enabled() { return !!this.cfg.apiKey; },
+
+  async chat(system, user, maxTokens) {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': this.cfg.apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: this.cfg.model || 'claude-sonnet-5',
+        max_tokens: maxTokens || 4000,
+        system,
+        messages: [{ role: 'user', content: user }]
+      })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      const hint = res.status === 401 ? 'APIキーが無効です。設定を確認してください。'
+        : res.status === 400 && /credit/i.test(JSON.stringify(err)) ? 'クレジット残高が不足しています。'
+        : res.status === 429 ? 'アクセスが集中しています。少し待って再実行してください。'
+        : (err.error && err.error.message) || '';
+      throw new Error(`API ${res.status}: ${hint}`);
+    }
+    const data = await res.json();
+    let text = (data.content || []).map(c => c.text || '').join('').trim();
+    const m = text.match(/\{[\s\S]*\}/);
+    return JSON.parse(m ? m[0] : text);
+  },
+
+  SYS: `あなたは各分野の専門家チーム(ファイナンシャルプランナー、キャリアアドバイザー、編集者、Webマーケター、心理カウンセラー、保健指導の専門家など)の知見を統合した行動計画コーチです。ユーザーの目標と制約から、現実的で具体的な行動計画を作ります。
+ルール:
+- 抽象論は禁止。すべて「いつ・何を・どれくらい」が分かる具体的な行動にする
+- ユーザーの制約(避けたいこと・使える時間とお金)を最優先する
+- 業界の相場観や標準的な目安の数字を積極的に使う
+- ユーザーが書いた数字(金額・時間・期限)から必要なペースを計算して示す
+- 成功を保証する表現は禁止。現実的な難易度も率直に伝える
+- リスクの高い行動は明確に止める
+- 期限が曖昧なら現実的な仮期限を設定する
+- すべて日本語で出力する
+- 出力は指定されたJSONのみ。コードブロックや前置き・後書きは一切付けない`,
+
+  _arr(v, fb, max) { return Array.isArray(v) && v.length ? v.map(String).slice(0, max || 99) : fb; },
+  _str(v, fb) { return (typeof v === 'string' && v.trim()) ? v.trim() : fb; },
+
+  async plan(input, base) {
+    const opt = [];
+    if (input.worry) opt.push('不安なこと: ' + input.worry);
+    if (input.tried) opt.push('すでに試したこと: ' + input.tried);
+    if (input.successImage) opt.push('成功した時の状態: ' + input.successImage);
+    if (input.whyFail) opt.push('失敗したくない理由: ' + input.whyFail);
+    if (input.numbers) opt.push('現在の数字や実績: ' + input.numbers);
+    const user = `# ユーザーの入力
+達成したいこと: ${input.goal}
+期限: ${input.deadline}
+今の状況: ${input.situation}
+使える時間: ${input.time}
+使えるお金: ${input.money}
+絶対に避けたいこと: ${input.avoid}
+優先したいこと: ${input.priority}
+${opt.join('\n')}
+
+# 出力形式 (このJSONだけを出力)
+{
+ "summary": "目標の要約と方針。『こうしていきましょう』という提案の形で3〜4文",
+ "top": "最優先目標(1文)",
+ "roadmap": ["1ヶ月目: ...", "2ヶ月目: ...", "3ヶ月目: ..."],
+ "month": "1ヶ月目標(数字入り)",
+ "week": ["今週の目標5つまで。具体的行動で"],
+ "today": ["今日やること3つまで。今日中に完了できる粒度で"],
+ "first": "最初の一歩(15分以内でできること)",
+ "quick": ["15分でできる小タスク3つ"],
+ "flow": ["今後の進め方。第1週→第2週→第3〜4週→2ヶ月目→3ヶ月目の流れと判断分岐を6項目程度で"],
+ "expert": ["この分野の専門家としての視点・相場観・定石を3〜4項目"],
+ "numbers": ["ユーザーの数字から計算した具体的な目安を2〜4項目。計算材料がなければ空配列"],
+ "kpis": ["測るべきKPI 4〜6個"],
+ "success": ["成功条件2〜3個。できるだけ数字入りで"],
+ "pitfalls": ["失敗しやすいポイント3個"],
+ "donts": ["やらないこと3〜5個"],
+ "risks": ["危険行動2〜3個"],
+ "next": ["次に確認すべきこと3個"],
+ "judge": ["迷った時の判断基準3個"]
+}`;
+    const j = await this.chat(this.SYS, user, 4000);
+    return {
+      ...base,
+      summary: this._str(j.summary, base.summary),
+      top: this._str(j.top, base.top),
+      roadmap: this._arr(j.roadmap, base.roadmap),
+      month: this._str(j.month, base.month),
+      week: this._arr(j.week, base.week, 5),
+      today: this._arr(j.today, base.today, 3),
+      first: this._str(j.first, base.first),
+      quick: this._arr(j.quick, base.quick, 3),
+      flow: this._arr(j.flow, base.flow),
+      expert: this._arr(j.expert, base.expert),
+      numbers: this._arr(j.numbers, base.numbers),
+      kpis: this._arr(j.kpis, base.kpis),
+      success: this._arr(j.success, base.success),
+      pitfalls: this._arr(j.pitfalls, base.pitfalls),
+      donts: this._arr(j.donts, base.donts),
+      risks: this._arr(j.risks, base.risks),
+      next: this._arr(j.next, base.next),
+      judge: this._arr(j.judge, base.judge),
+      aiGenerated: true
+    };
+  },
+
+  async review(rev, project, base) {
+    const plan = project.plan;
+    const user = `# プロジェクト
+目標: ${project.purpose}
+期限: ${project.deadline}
+最優先目標: ${plan.top}
+今週の計画: ${plan.week.join(' / ')}
+
+# 今週の振り返り入力
+今週やったこと: ${rev.did || '(未記入)'}
+今週の成果: ${rev.result || '(未記入)'}
+数字として進んだこと: ${rev.numbers || '(未記入)'}
+進まなかった理由: ${rev.blocked || '(未記入)'}
+効果があった行動: ${rev.worked || '(未記入)'}
+無駄だった行動: ${rev.wasted || '(未記入)'}
+来週も続けたいこと: ${rev.keep || '(未記入)'}
+来週やめたいこと: ${rev.stop || '(未記入)'}
+メンタル状態(1-10): ${rev.mental}
+
+# 出力形式 (このJSONだけを出力)
+{
+ "grade": "A〜Dの1文字",
+ "gradeMsg": "評価の理由と労いを2〜3文で。責めない",
+ "focus": ["来週の重点行動3つ。具体的に"],
+ "improve": ["改善点2〜3個。原因への対策の形で"],
+ "keep": ["継続すること2〜3個"],
+ "stop": ["やめること1〜3個"],
+ "todayCandidates": ["来週の『今日やること』候補3つ"],
+ "revision": "目標の修正案(不要なら『修正不要』とその理由)",
+ "priority": "来週の優先順位を1行で"
+}`;
+    const j = await this.chat(this.SYS, user, 2000);
+    return {
+      ...base,
+      grade: this._str(j.grade, base.grade).slice(0, 2),
+      gradeMsg: this._str(j.gradeMsg, base.gradeMsg),
+      focus: this._arr(j.focus, base.focus, 3),
+      improve: this._arr(j.improve, base.improve, 3),
+      keep: this._arr(j.keep, base.keep, 3),
+      stop: this._arr(j.stop, base.stop, 3),
+      todayCandidates: this._arr(j.todayCandidates, base.todayCandidates, 3),
+      revision: this._str(j.revision, base.revision),
+      priority: this._str(j.priority, base.priority),
+      aiGenerated: true
+    };
   }
 };
 

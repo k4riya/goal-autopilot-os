@@ -1,5 +1,5 @@
 /* Goal Autopilot OS — Service Worker (オフライン対応 / アプリシェルキャッシュ) */
-const CACHE = 'gaos-v2';
+const CACHE = 'gaos-v4';
 const ASSETS = [
   './',
   './index.html',
